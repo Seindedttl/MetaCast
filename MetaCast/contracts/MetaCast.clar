@@ -278,3 +278,64 @@
 
 (define-data-var meta-prediction-nonce uint u0)
 
+;; Meta-prediction feature - Allows creating markets that automatically trigger based on AI confidence levels
+(define-public (create-meta-prediction-market 
+                (parent-market-id uint) 
+                (description (string-utf8 256)) 
+                (resolution-source (string-utf8 128)) 
+                (expiration uint) 
+                (fee-percentage uint)
+                (confidence-threshold uint)
+                (meta-description (string-utf8 256))
+                (meta-expiration uint))
+  (let
+    (
+      (parent-market (unwrap! (get-market parent-market-id) ERR_INVALID_MARKET))
+      (current-time (unwrap-panic (get-block-info? time u0)))
+      (market-id (var-get market-nonce))
+      (meta-id (var-get meta-prediction-nonce))
+      (new-market {
+        creator: tx-sender,
+        description: description,
+        resolution-source: resolution-source,
+        expiration: expiration,
+        resolution-time: u0,
+        outcome: none,
+        total-yes-amount: u0,
+        total-no-amount: u0,
+        fee-percentage: fee-percentage,
+        ai-confidence-metric: u0,
+        is-closed: false
+      })
+      (new-meta-prediction {
+        creator: tx-sender,
+        description: meta-description,
+        expiration: meta-expiration,
+        confidence-threshold: confidence-threshold,
+        trigger-executed: false
+      })
+    )
+    ;; Verify conditions
+    (asserts! (< current-time (get expiration parent-market)) ERR_MARKET_CLOSED)
+    (asserts! (<= confidence-threshold u100) ERR_INVALID_BET)
+    (asserts! (< expiration meta-expiration) ERR_INVALID_MARKET)
+    
+    ;; Create the base market
+    (map-set markets { market-id: market-id } new-market)
+    (var-set market-nonce (+ market-id u1))
+    
+    ;; Create the meta-prediction link
+    (map-set meta-predictions 
+      { parent-market-id: parent-market-id, meta-market-id: meta-id } 
+      new-meta-prediction)
+    (var-set meta-prediction-nonce (+ meta-id u1))
+    
+    ;; Return both IDs
+    (ok {
+      base-market-id: market-id,
+      meta-prediction-id: meta-id,
+      parent-market-id: parent-market-id
+    })
+  )
+)
+
